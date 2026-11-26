@@ -1,21 +1,25 @@
-# MKP Переводчик (Android)
+# MKP Translator (Android)
 
-Переводит скрипты формата `.mkh` + `.mkp` через LLM-API (Gemini, Claude, ChatGPT, Grok или любой OpenAI-совместимый адрес).
+Android app that translates `.mkh` + `.mkp` game scripts using an LLM API (Gemini, Claude, ChatGPT, Grok, or any OpenAI-compatible endpoint).
 
-## Как собрать APK через GitHub
-1. Создайте пустой репозиторий на GitHub и загрузите в него всё содержимое этой папки (включая скрытую `.github`).
-2. Вкладка **Actions** → **Build APK** → **Run workflow** (запустится и сам при push в main).
-3. Когда сборка закончится, откройте запуск → раздел **Artifacts** → скачайте `MkpTranslator-apk` → установите `app-debug.apk`.
+## Build the APK with GitHub Actions
+1. Push this repository to GitHub (the workflow runs automatically on every push to `main`).
+2. Open the **Actions** tab, select **Build APK** and, if needed, click **Run workflow**.
+3. When the run finishes, download `MkpTranslator-apk` from **Artifacts** and install `app-debug.apk`.
 
-## Как пользоваться
-1. **Настройки** → выберите тип API, впишите адрес (endpoint), ключ и модель → «Проверить API».
-2. Выберите язык перевода (русский / английский / любой свой).
-3. На главном экране «Открыть .mkh + .mkp» → выберите оба файла сразу.
-4. Откройте главу — при включённом автопереводе она переведётся сама. Или «Перевести всё».
-5. Нажатие на строку — ручная правка или «Заново (ИИ)». «Имена» — единый словарь имён персонажей.
-6. «Экспорт» → выберите папку → получите `script.mkh`, `script.mkp` (с переводом) и `translation.txt`.
+## Usage
+1. **Settings**: choose the API type, enter the endpoint, API key and model, then tap **Check API**.
+2. Choose the target language (Russian, English, others, or a custom one).
+3. On the main screen tap **Open .mkh + .mkp** and select both files at once.
+4. Open a chapter. With auto-translate on it is translated automatically, or use **Translate all**.
+5. Tap a line to edit it by hand or re-translate it with the LLM. **Names** is a shared glossary of character names.
+6. **Export**: pick a folder to get `script.mkh`, `script.mkp` (translated) and `translation.txt`.
 
-Перевод сохраняется автоматически, можно закрывать приложение и продолжать позже.
+Translations are saved automatically, so you can close the app and continue later.
 
-## Формат файлов
-`.mkh` — индекс, `.mkp` — данные; всё XOR 0xA7, внутри текст Shift-JIS. Реплика: `【Имя】` + текст + `*`; строка без имени — просто текст/мысли; варианты выбора после `#select`.
+## File format
+`.mkh` is the index and `.mkp` holds the data. Both are XOR-encoded with 0xA7, and the text inside is Shift-JIS. A line of dialogue is `【Name】`, the text, then `*`. A line without a name is plain narration or thoughts. Choices follow `#select`.
+
+## Notes
+- Shift-JIS cannot encode Cyrillic, so export defaults to UTF-8. Whether the game engine reads UTF-8 is up to the engine.
+- Default model names are only placeholders; change them in Settings if needed.
