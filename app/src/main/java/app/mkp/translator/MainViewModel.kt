@@ -178,6 +178,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleSave()
     }
 
+    // ---------- Find & replace (translations only) ----------
+    private class Undo(val s: ScriptData, val seg: Seg, val old: String)
+    private var undo: List<Undo> = emptyList()
+    var undoCount by mutableStateOf(0)
+
+    fun hasInTr(s: ScriptData, seg: Seg, find: String, exact: Boolean): Boolean {
+        val t = translationOf(s, seg) ?: return false
+        return find.isNotEmpty() && t.contains(find, ignoreCase = !exact)
+    }
+
+    /** Replaces [find] with [repl] in the translations of the given lines; returns how many lines changed. */
+    fun replaceIn(list: List<Pair<ScriptData, Seg>>, find: String, repl: String, exact: Boolean): Int {
+        if (find.isEmpty()) return 0
+        val u = ArrayList<Undo>()
+        for ((s, seg) in list) {
+            val t = translationOf(s, seg) ?: continue
+            if (!t.contains(find, ignoreCase = !exact)) continue
+            u.add(Undo(s, seg, t))
+            setTranslation(s, seg, t.replace(find, repl, ignoreCase = !exact))
+        }
+        undo = u; undoCount = u.size
+        if (u.size > 1) message = "Заменено в строках: ${u.size}"
+        return u.size
+    }
+
+    fun undoReplace() {
+        undo.forEach { setTranslation(it.s, it.seg, it.old) }
+        message = "Замена отменена (${undo.size})"
+        undo = emptyList(); undoCount = 0
+    }
+
     fun setGlossary(name: String, value: String) {
         if (value.isBlank()) glossary.remove(name) else glossary[name] = value.trim()
         scheduleSave()

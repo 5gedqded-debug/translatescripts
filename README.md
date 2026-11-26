@@ -20,8 +20,9 @@ Android app that translates `.mkh` + `.mkp` game scripts using an LLM API (Gemin
 9. **Search and all lines**: search inside a chapter, or open **All lines** for a global searchable list. Each row shows its id (`script #n`).
     Use **Choices** for a separate list of the player choice buttons (translate them on their own or edit by hand).
 10. **Similar lines**: the `≈` button on a row lists duplicates and similar phrases; tap one to reuse its translation.
-11. **Names**: tap a speaker name anywhere to set the correct translation yourself.
-12. **Import translation**: with the original project open, tap **Import translation** and pick an already translated `.mkh` + `.mkp` pair and/or a `translation.txt`. Lines are matched by structure; only empty lines are filled and the name glossary is learned from the pair.
+11. **Find & replace**: in any search tap **Replace**, type the new text and replace it in one line (*Replace here*) or in all matches (*Replace in all*). Search is either an exact case-sensitive phrase or loose (any word order, ignoring case). The last replacement can be undone.
+12. **Names**: tap a speaker name anywhere to set the correct translation yourself.
+13. **Import translation**: with the original project open, tap **Import translation** and pick an already translated `.mkh` + `.mkp` pair and/or a `translation.txt`. Lines are matched by structure; only empty lines are filled and the name glossary is learned from the pair.
 
 Translations are saved automatically, so you can close the app and continue later.
 

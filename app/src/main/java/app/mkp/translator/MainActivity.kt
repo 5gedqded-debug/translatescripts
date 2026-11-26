@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenu
@@ -250,11 +251,29 @@ fun ListScreen(
 private fun speakerColor(name: String): Color =
     Color.hsv((abs(name.hashCode()) % 360).toFloat(), 0.45f, 0.85f)
 
-private fun matches(vm: MainViewModel, s: ScriptData, seg: Seg, q: String): Boolean {
-    if (seg.original.contains(q, ignoreCase = true)) return true
-    if (vm.translationOf(s, seg)?.contains(q, ignoreCase = true) == true) return true
-    val sp = seg.speaker ?: return false
-    return sp.contains(q, ignoreCase = true) || vm.glossary[sp]?.contains(q, ignoreCase = true) == true
+class SearchState {
+    var query by mutableStateOf("")
+    var exact by mutableStateOf(false)
+    var replaceOn by mutableStateOf(false)
+    var repl by mutableStateOf("")
+    /** Text actually searched for (exact mode keeps spaces as typed). */
+    val needle: String get() = if (exact) query else query.trim()
+}
+
+private val wsRe = Regex("\\s+")
+
+/** Exact: case-sensitive phrase. Loose: case-insensitive, every typed word must be present, any order. */
+private fun matches(vm: MainViewModel, s: ScriptData, seg: Seg, st: SearchState): Boolean {
+    val q = st.needle
+    if (q.isEmpty()) return true
+    val tr = vm.translationOf(s, seg)
+    val sp = seg.speaker
+    val spt = if (sp != null) sp + " " + (vm.glossary[sp] ?: "") else ""
+    if (st.exact) {
+        return seg.original.contains(q) || tr?.contains(q) == true || spt.contains(q)
+    }
+    val hay = seg.original + "\n" + (tr ?: "") + "\n" + spt
+    return q.split(wsRe).all { it.isEmpty() || hay.contains(it, ignoreCase = true) }
 }
 
 @Composable
@@ -306,7 +325,7 @@ fun SimilarButton(vm: MainViewModel, s: ScriptData, seg: Seg) {
 @Composable
 fun SegRow(
     vm: MainViewModel, s: ScriptData, idx: Int, showScript: Boolean,
-    onClick: () -> Unit, onName: (String) -> Unit
+    onClick: () -> Unit, onName: (String) -> Unit, onReplace: (() -> Unit)? = null
 ) {
     val seg = s.segs[idx]
     val tr = vm.translationOf(s, seg)
@@ -342,6 +361,7 @@ fun SegRow(
             if (vm.settings.showOriginal && tr != null) {
                 Text(seg.original, fontSize = (fs - 3).sp, color = MaterialTheme.colorScheme.outline)
             }
+            if (onReplace != null) TextButton(onClick = onReplace) { Text("Заменить здесь") }
         }
         SimilarButton(vm, s, seg)
     }
@@ -393,13 +413,44 @@ fun NameDialog(vm: MainViewModel, name: String, onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = query, onValueChange = onChange,
-        label = { Text("Поиск по фразам") }, singleLine = true,
-        trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { onChange("") }) { Text("✕") } },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+private fun SearchPanel(vm: MainViewModel, st: SearchState, replaceCount: Int, onReplaceAll: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        OutlinedTextField(
+            value = st.query, onValueChange = { st.query = it },
+            label = { Text("Поиск по фразам") }, singleLine = true,
+            trailingIcon = { if (st.query.isNotEmpty()) TextButton(onClick = { st.query = "" }) { Text("✕") } },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(selected = st.exact, onClick = { st.exact = !st.exact }, label = { Text("Точная фраза") })
+            FilterChip(selected = st.replaceOn, onClick = { st.replaceOn = !st.replaceOn }, label = { Text("Замена") })
+        }
+        if (st.replaceOn) {
+            OutlinedTextField(
+                value = st.repl, onValueChange = { st.repl = it },
+                label = { Text("Заменить на") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onReplaceAll, enabled = replaceCount > 0 && st.needle.isNotEmpty()) {
+                    Text("Заменить во всех ($replaceCount)")
+                }
+                if (vm.undoCount > 0) TextButton(onClick = { vm.undoReplace() }) { Text("Отменить") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmReplace(st: SearchState, count: Int, onYes: () -> Unit, onNo: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onNo,
+        title = { Text("Заменить во всех?") },
+        text = { Text("«${st.needle}» → «${st.repl}» в переводах: $count строк. Это можно отменить кнопкой «Отменить».") },
+        confirmButton = { TextButton(onClick = onYes) { Text("Заменить") } },
+        dismissButton = { TextButton(onClick = onNo) { Text("Нет") } }
     )
 }
 
@@ -410,10 +461,14 @@ fun ReaderScreen(vm: MainViewModel, s: ScriptData, snack: SnackbarHostState, onB
     var edit by remember { mutableStateOf<Seg?>(null) }
     var nameEdit by remember { mutableStateOf<String?>(null) }
     var searching by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    val q = query.trim()
-    val shown = remember(q, vm.busy, s) {
-        if (q.isEmpty()) s.segs.indices.toList() else s.segs.indices.filter { matches(vm, s, s.segs[it], q) }
+    val st = remember { SearchState() }
+    var confirm by remember { mutableStateOf(false) }
+    val needle = st.needle
+    val shown = remember(needle, st.exact, vm.busy, s) {
+        if (needle.isEmpty()) s.segs.indices.toList() else s.segs.indices.filter { matches(vm, s, s.segs[it], st) }
+    }
+    val replaceCount = remember(shown, needle, st.exact, st.replaceOn, vm.undoCount) {
+        if (!st.replaceOn) 0 else shown.count { vm.hasInTr(s, s.segs[it], needle, st.exact) }
     }
     val listState = rememberLazyListState()
     LaunchedEffect(vm.jumpStart, s) {
@@ -436,7 +491,7 @@ fun ReaderScreen(vm: MainViewModel, s: ScriptData, snack: SnackbarHostState, onB
                     }
                 },
                 actions = {
-                    TextButton(onClick = { searching = !searching; if (!searching) query = "" }) { Text("Поиск") }
+                    TextButton(onClick = { searching = !searching; if (!searching) { st.query = ""; st.replaceOn = false } }) { Text("Поиск") }
                     TextButton(onClick = { vm.settings.showOriginal = !vm.settings.showOriginal }) {
                         Text(if (vm.settings.showOriginal) "Без ориг." else "С ориг.")
                     }
@@ -453,16 +508,23 @@ fun ReaderScreen(vm: MainViewModel, s: ScriptData, snack: SnackbarHostState, onB
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(vm.status, modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
             }
-            if (searching) SearchField(query) { query = it }
+            if (searching) SearchPanel(vm, st, replaceCount) { confirm = true }
             LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 items(shown, key = { s.segs[it].start }) { idx ->
-                    SegRow(vm, s, idx, false, onClick = { edit = s.segs[idx] }, onName = { nameEdit = it })
+                    val sg = s.segs[idx]
+                    val can = st.replaceOn && needle.isNotEmpty() && vm.hasInTr(s, sg, needle, st.exact)
+                    SegRow(vm, s, idx, false, onClick = { edit = sg }, onName = { nameEdit = it },
+                        onReplace = if (can) ({ vm.replaceIn(listOf(s to sg), needle, st.repl, st.exact) }) else null)
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
     }
 
+    if (confirm) ConfirmReplace(st, replaceCount, onYes = {
+        confirm = false
+        vm.replaceIn(shown.map { s to s.segs[it] }, needle, st.repl, st.exact)
+    }, onNo = { confirm = false })
     edit?.let { seg -> EditDialog(vm, s, seg, onDismiss = { edit = null }, onOpenChapter = null) }
     nameEdit?.let { n -> NameDialog(vm, n) { nameEdit = null } }
 }
@@ -476,17 +538,21 @@ fun LinesScreen(
     vm: MainViewModel, snack: SnackbarHostState, choicesOnly: Boolean, onBack: () -> Unit,
     onOpenChapter: (ScriptData, Seg) -> Unit
 ) {
-    var query by remember { mutableStateOf("") }
+    val st = remember { SearchState() }
+    var confirm by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf<LineRef?>(null) }
     var nameEdit by remember { mutableStateOf<String?>(null) }
-    val q = query.trim()
-    val refs = remember(q, vm.busy, vm.scripts.size, choicesOnly) {
+    val needle = st.needle
+    val refs = remember(needle, st.exact, vm.busy, vm.scripts.size, choicesOnly) {
         val out = ArrayList<LineRef>()
         for (s in vm.scripts) for (i in s.segs.indices) {
             if (choicesOnly && !s.segs[i].choice) continue
-            if (q.isEmpty() || matches(vm, s, s.segs[i], q)) out.add(LineRef(s, i))
+            if (needle.isEmpty() || matches(vm, s, s.segs[i], st)) out.add(LineRef(s, i))
         }
         out
+    }
+    val replaceCount = remember(refs, needle, st.exact, st.replaceOn, vm.undoCount) {
+        if (!st.replaceOn) 0 else refs.count { vm.hasInTr(it.s, it.s.segs[it.idx], needle, st.exact) }
     }
     Scaffold(
         topBar = {
@@ -506,15 +572,22 @@ fun LinesScreen(
     ) { pad ->
         Column(Modifier.padding(pad).imePadding().fillMaxSize()) {
             if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            SearchField(query) { query = it }
+            SearchPanel(vm, st, replaceCount) { confirm = true }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(refs, key = { "${it.s.name}#${it.idx}" }) { r ->
-                    SegRow(vm, r.s, r.idx, true, onClick = { edit = r }, onName = { nameEdit = it })
+                    val sg = r.s.segs[r.idx]
+                    val can = st.replaceOn && needle.isNotEmpty() && vm.hasInTr(r.s, sg, needle, st.exact)
+                    SegRow(vm, r.s, r.idx, true, onClick = { edit = r }, onName = { nameEdit = it },
+                        onReplace = if (can) ({ vm.replaceIn(listOf(r.s to sg), needle, st.repl, st.exact) }) else null)
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
     }
+    if (confirm) ConfirmReplace(st, replaceCount, onYes = {
+        confirm = false
+        vm.replaceIn(refs.map { it.s to it.s.segs[it.idx] }, needle, st.repl, st.exact)
+    }, onNo = { confirm = false })
     edit?.let { r ->
         val seg = r.s.segs[r.idx]
         EditDialog(vm, r.s, seg, onDismiss = { edit = null }, onOpenChapter = { onOpenChapter(r.s, seg) })
