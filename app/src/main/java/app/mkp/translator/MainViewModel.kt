@@ -214,6 +214,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun translateAll() = translate(scripts.toList())
     fun translateCurrent() { current?.let { translate(listOf(it)) } }
+    fun translateChoices() = translate(scripts.toList(), choicesOnly = true)
 
     /** Stops everything right away: in-flight HTTP requests are closed, all workers are cancelled. */
     fun cancel() {
@@ -221,7 +222,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         job?.cancel()
     }
 
-    private fun translate(targets: List<ScriptData>) {
+    private fun translate(targets: List<ScriptData>, choicesOnly: Boolean = false) {
         if (busy) return
         val cfg = settings.config()
         if (!cfg.ready) { error = "Заполните настройки API (ключ, модель, адрес)"; return }
@@ -230,7 +231,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch {
             busy = true
             try {
-                runTranslate(cfg, targets)
+                runTranslate(cfg, targets, choicesOnly)
             } catch (e: CancellationException) {
                 status = "Остановлено"
             } catch (e: Exception) {
@@ -250,7 +251,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private class Batch(val entries: List<Entry>)
 
-    private suspend fun runTranslate(cfg: ApiConfig, targets: List<ScriptData>) {
+    private suspend fun runTranslate(cfg: ApiConfig, targets: List<ScriptData>, choicesOnly: Boolean) {
         val src = settings.sourceLang; val tgt = settings.targetName; val extra = settings.extraPrompt
         val batchSize = settings.batchSize.coerceIn(1, 100)
         val parallel = settings.parallel.coerceIn(1, 8)
@@ -263,6 +264,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         for (s in targets) {
             val m = trMap(s.name)
             s.segs.forEachIndexed { i, seg ->
+                if (choicesOnly && !seg.choice) return@forEachIndexed
                 if (m.containsKey(seg.start)) return@forEachIndexed
                 if (trivial.matches(seg.original)) { m[seg.start] = seg.original; return@forEachIndexed }
                 if (useCache) {

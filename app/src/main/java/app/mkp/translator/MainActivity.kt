@@ -136,7 +136,9 @@ fun App(vm: MainViewModel) {
     when {
         screen == "settings" -> SettingsScreen(vm, snack) { screen = "list" }
         screen == "names" -> NamesScreen(vm, snack) { screen = "list" }
-        screen == "lines" -> LinesScreen(vm, snack, onBack = { screen = "list" }) { sc, sg ->
+        screen == "lines" || screen == "choices" -> LinesScreen(
+            vm, snack, choicesOnly = screen == "choices", onBack = { screen = "list" }
+        ) { sc, sg ->
             vm.openScript(sc, sg, auto = false); screen = "reader"
         }
         screen == "reader" && cur != null -> ReaderScreen(vm, cur, snack) { vm.current = null; screen = "list" }
@@ -146,6 +148,7 @@ fun App(vm: MainViewModel) {
             onSettings = { screen = "settings" },
             onNames = { screen = "names" },
             onLines = { screen = "lines" },
+            onChoices = { screen = "choices" },
             onImportTr = { trImporter.launch(arrayOf("*/*")) },
             onImport = { importer.launch(arrayOf("*/*")) },
             onExport = { exporter.launch(null) }
@@ -168,7 +171,7 @@ fun App(vm: MainViewModel) {
 fun ListScreen(
     vm: MainViewModel, snack: SnackbarHostState,
     onOpen: (ScriptData) -> Unit, onSettings: () -> Unit, onNames: () -> Unit,
-    onLines: () -> Unit, onImportTr: () -> Unit,
+    onLines: () -> Unit, onChoices: () -> Unit, onImportTr: () -> Unit,
     onImport: () -> Unit, onExport: () -> Unit
 ) {
     Scaffold(
@@ -209,6 +212,7 @@ fun ListScreen(
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onLines, modifier = Modifier.weight(1f)) { Text("Все строки") }
+                    OutlinedButton(onClick = onChoices, modifier = Modifier.weight(1f)) { Text("Выборы") }
                     OutlinedButton(onClick = onImportTr, enabled = !vm.busy, modifier = Modifier.weight(1f)) { Text("Импорт перевода") }
                 }
                 val total = vm.scripts.sumOf { it.segs.size }
@@ -469,16 +473,17 @@ class LineRef(val s: ScriptData, val idx: Int)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LinesScreen(
-    vm: MainViewModel, snack: SnackbarHostState, onBack: () -> Unit,
+    vm: MainViewModel, snack: SnackbarHostState, choicesOnly: Boolean, onBack: () -> Unit,
     onOpenChapter: (ScriptData, Seg) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var edit by remember { mutableStateOf<LineRef?>(null) }
     var nameEdit by remember { mutableStateOf<String?>(null) }
     val q = query.trim()
-    val refs = remember(q, vm.busy, vm.scripts.size) {
+    val refs = remember(q, vm.busy, vm.scripts.size, choicesOnly) {
         val out = ArrayList<LineRef>()
         for (s in vm.scripts) for (i in s.segs.indices) {
+            if (choicesOnly && !s.segs[i].choice) continue
             if (q.isEmpty() || matches(vm, s, s.segs[i], q)) out.add(LineRef(s, i))
         }
         out
@@ -487,7 +492,14 @@ fun LinesScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Text("←", fontSize = 22.sp) } },
-                title = { Text("Все строки (${refs.size})") }
+                title = { Text((if (choicesOnly) "Кнопки выбора" else "Все строки") + " (${refs.size})") },
+                actions = {
+                    if (choicesOnly) {
+                        TextButton(onClick = { if (vm.busy) vm.cancel() else vm.translateChoices() }) {
+                            Text(if (vm.busy) "Стоп" else "Перевести")
+                        }
+                    }
+                }
             )
         },
         snackbarHost = { SnackbarHost(snack) }
