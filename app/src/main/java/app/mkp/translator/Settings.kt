@@ -35,6 +35,7 @@ class AppSettings(context: Context) {
     var parallel: Int get() = str("par", "2").toIntOrNull() ?: 2; set(v) = put("par", v.toString())
     var wrapWidth: Int get() = str("wrap", "46").toIntOrNull() ?: 46; set(v) = put("wrap", v.toString())
 
+    var useCache: Boolean get() = str("cache", "1") == "1"; set(v) = put("cache", if (v) "1" else "0")
     var fontSize: Int get() = str("fs", "16").toIntOrNull() ?: 16; set(v) = put("fs", v.toString())
 
     val targetName: String get() = customTarget.ifBlank { targetLang }

@@ -1,5 +1,6 @@
 package app.mkp.translator
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -21,9 +22,22 @@ class ApiException(msg: String) : Exception(msg)
 class Item(val id: Int, val speaker: String?, val text: String)
 
 object Llm {
+    private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    @Volatile private var aborted = false
+
+    /** Immediately closes every in-flight request and makes new ones fail with a cancellation. */
+    fun abortAll() {
+        aborted = true
+        active.forEach { runCatching { it.disconnect() } }
+    }
+
+    fun reset() { aborted = false }
+
     // ---------- HTTP ----------
     private fun post(url: String, headers: Map<String, String>, body: String): String {
+        if (aborted) throw CancellationException("Stopped")
         val conn = URL(url).openConnection() as HttpURLConnection
+        active.add(conn)
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 30_000
@@ -38,6 +52,7 @@ object Llm {
             if (code !in 200..299) throw HttpException(code, text.take(500))
             return text
         } finally {
+            active.remove(conn)
             conn.disconnect()
         }
     }
@@ -48,9 +63,11 @@ object Llm {
             try {
                 return block()
             } catch (e: HttpException) {
+                if (aborted) throw CancellationException("Stopped")
                 val retry = e.code == 429 || e.code >= 500
                 if (!retry || attempt >= 4) throw e
             } catch (e: IOException) {
+                if (aborted) throw CancellationException("Stopped")
                 if (attempt >= 4) throw e
             }
             delay(2000L shl attempt)

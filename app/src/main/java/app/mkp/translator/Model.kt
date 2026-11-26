@@ -22,7 +22,30 @@ class Seg(
     val speaker: String?,
     val choice: Boolean,
     val original: String
-)
+) {
+    /** Normalized text used as the repeat-cache key. */
+    val key: String = Tx.norm(original)
+}
+
+object Tx {
+    private val ws = Regex("\\s+")
+    fun norm(s: String): String = s.trim().replace(ws, " ")
+
+    fun bigrams(s: String): HashSet<Int> {
+        val set = HashSet<Int>()
+        for (i in 0 until s.length - 1) set.add((s[i].code shl 16) or s[i + 1].code)
+        return set
+    }
+
+    /** Dice similarity between a bigram set and a string, 0..1. */
+    fun dice(q: HashSet<Int>, s: String): Float {
+        val n = s.length - 1
+        if (n <= 0 || q.isEmpty()) return 0f
+        var common = 0
+        for (i in 0 until n) if (q.contains((s[i].code shl 16) or s[i + 1].code)) common++
+        return 2f * common / (q.size + n)
+    }
+}
 
 class ScriptData(val name: String, val lines: List<String>) {
     val segs: List<Seg> = ScriptParser.parse(lines)
@@ -65,6 +88,10 @@ object ScriptParser {
         }
         return sb.toString()
     }
+
+    /** Joins wrapped lines of an already translated text (words are separated by spaces). */
+    fun joinTranslated(ls: List<String>): String =
+        ls.joinToString(" ") { it.trim() }.replace(Regex("\\s+"), " ").trim()
 
     /** Разбивает перевод на строки по ширине (0 — без переноса). */
     fun wrap(text: String, width: Int): List<String> {

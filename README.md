@@ -15,6 +15,13 @@ Android app that translates `.mkh` + `.mkp` game scripts using an LLM API (Gemin
 5. Tap a line to edit it by hand or re-translate it with the LLM. **Names** is a shared glossary of character names.
 6. **Export**: pick a folder to get `script.mkh`, `script.mkp` (translated) and `translation.txt`.
 
+7. **Repeat cache**: identical phrases are translated once and reused (also inside a single run), so the AI is only asked for unique lines.
+8. **Stop / errors**: *Stop* or the first API error closes all in-flight requests and halts every worker at once.
+9. **Search and all lines**: search inside a chapter, or open **All lines** for a global searchable list. Each row shows its id (`script #n`).
+10. **Similar lines**: the `≈` button on a row lists duplicates and similar phrases; tap one to reuse its translation.
+11. **Names**: tap a speaker name anywhere to set the correct translation yourself.
+12. **Import translation**: with the original project open, tap **Import translation** and pick an already translated `.mkh` + `.mkp` pair and/or a `translation.txt`. Lines are matched by structure; only empty lines are filled and the name glossary is learned from the pair.
+
 Translations are saved automatically, so you can close the app and continue later.
 
 ## File format
